@@ -20,9 +20,14 @@
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 1000);
 
-
+// Stepcount
 static uint32_t stepCount = 0; 
 static uint32_t stepCountOffset = 0;
+
+// GPS
+Adafruit_GPS GPS(&Wire);
+#define GPSECHO false
+uint32_t gpsTimer;
 
 //Firebase sending time!!!!!!!
 unsigned long lastFirebaseUpdate = 0;
@@ -87,6 +92,18 @@ struct SensorData {
 // use std::vector to record data
 std::vector<SensorData> recordedData;
 
+// ============= Define a structure to record GPS data ==============
+struct GPSData {
+    unsigned long timeStamp;
+    float latitude;
+    float longitude;
+    float speed;
+    float angle;
+    float altitude;
+    int satellites;
+  };
+  std::vector<GPSData> recordedGPSData;
+
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
 const unsigned long recordInterval = 10000; // record Every 10 seconds
@@ -98,6 +115,7 @@ extern NTPClient timeClient;
 void sendDataToFirebase(const String& path, const String& jsonData);
 void uploadSensorDataToFirebase();
 void uploadRecordedDataToFirebase();
+void uploadRecordedGPSDataToFirebase();
 void handleButton();
 void updateClock();
 void drawDigitalClock();
@@ -119,7 +137,7 @@ void configureBNO08x();
 
 
 
-
+//==========================================void setup=====================================
 
 void setup() {
   Serial.begin(115200);
@@ -160,7 +178,17 @@ void setup() {
     bnoAvailable = true;
     configureBNO08x();
   }
-  
+
+  // GPS
+  GPS.begin(0x10);
+  GPS.sendCommand(PMTK_SET_NMEA_OUTPUT_RMCGGA);
+  GPS.sendCommand(PMTK_SET_NMEA_UPDATE_1HZ);
+  GPS.sendCommand(PGCMD_ANTENNA);
+  delay(1000);
+  GPS.println(PMTK_Q_RELEASE);
+  gpsTimer = millis();
+
+
   // Configure button
   pinMode(buttonPin, INPUT_PULLUP);
 
@@ -172,6 +200,9 @@ void setup() {
   timeClient.update();
 }
 
+
+
+//=======================================void loop===========================================
 void loop() {
   bool ntpSuccess = false;
 
@@ -187,6 +218,12 @@ void loop() {
   } else {
     
     updateClock();
+  }
+
+  // GPS 
+  char c = GPS.read();
+  if (GPS.newNMEAreceived()) {
+    GPS.parse(GPS.lastNMEA());
   }
 
   handleButton();
@@ -319,6 +356,7 @@ void handleButton() {
       if (isRecording) {
         // clear record before recording
         recordedData.clear();
+        recordedGPSData.clear();
         Serial.println("=== Start Recording Data ===");
         lastRecordTime = millis();
         stepCountOffset = stepCount;
@@ -327,6 +365,7 @@ void handleButton() {
       } else {
         Serial.println("=== Stop Recording Data, uploading... ===");
         uploadRecordedDataToFirebase();
+        uploadRecordedGPSDataToFirebase();
         // hide the red circle
         drawRecordingIndicator(false);
       }
@@ -605,6 +644,18 @@ void recordCurrentData() {
     : stepCount;
 
   recordedData.push_back(data);
+
+  //GPS
+  GPSData gd;
+  gd.timeStamp  = timeClient.getEpochTime();
+  gd.latitude   = GPS.latitude;
+  gd.longitude  = GPS.longitude;
+  gd.speed      = GPS.speed;
+  gd.angle      = GPS.angle;
+  gd.altitude   = GPS.altitude;
+  gd.satellites = GPS.satellites;
+  recordedGPSData.push_back(gd);
+
   Serial.println("Recorded one sensor data entry...");
 }
 
@@ -635,6 +686,31 @@ void uploadRecordedDataToFirebase() {
   sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/recordedData", jsonOutput);
   Serial.println("Recorded data uploaded to Firebase!");
 }
+
+
+//============== upload recordedGPSData to Firebase =============
+void uploadRecordedGPSDataToFirebase() {
+    StaticJsonDocument<4096> doc;
+    doc["flag"] = "GPS_recorded_data";
+    auto arr = doc.createNestedArray("records");
+    for (auto &gd : recordedGPSData) {
+      auto o = arr.createNestedObject();
+      o["timeStamp"]  = gd.timeStamp;
+      o["latitude"]   = gd.latitude;
+      o["longitude"]  = gd.longitude;
+      o["speed"]      = gd.speed;
+      o["angle"]      = gd.angle;
+      o["altitude"]   = gd.altitude;
+      o["satellites"] = gd.satellites;
+    }
+    String jsonOutput; 
+    serializeJson(doc, jsonOutput);
+    sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/GPSdata", jsonOutput);
+    Serial.println("Recorded GPS data uploaded to Firebase!");
+  }
+
+
+
 
 
 void drawRecordingIndicator(bool isOn) {
