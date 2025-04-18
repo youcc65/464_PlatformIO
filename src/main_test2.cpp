@@ -28,6 +28,7 @@ static uint32_t stepCountOffset = 0;
 Adafruit_GPS GPS(&Wire);
 #define GPSECHO false
 uint32_t gpsTimer;
+bool gpsAvailable = false;
 
 //Firebase sending time!!!!!!!
 unsigned long lastFirebaseUpdate = 0;
@@ -187,7 +188,7 @@ void setup() {
   delay(1000);
   GPS.println(PMTK_Q_RELEASE);
   gpsTimer = millis();
-
+  gpsAvailable = true;
 
   // Configure button
   pinMode(buttonPin, INPUT_PULLUP);
@@ -223,7 +224,9 @@ void loop() {
   // GPS 
   char c = GPS.read();
   if (GPS.newNMEAreceived()) {
-    GPS.parse(GPS.lastNMEA());
+    if (GPS.parse(GPS.lastNMEA())) {
+      gpsAvailable = true;
+    }
   }
 
   handleButton();
@@ -365,7 +368,10 @@ void handleButton() {
       } else {
         Serial.println("=== Stop Recording Data, uploading... ===");
         uploadRecordedDataToFirebase();
+
+        if (gpsAvailable && !recordedGPSData.empty()) {
         uploadRecordedGPSDataToFirebase();
+        }
         // hide the red circle
         drawRecordingIndicator(false);
       }
@@ -646,6 +652,7 @@ void recordCurrentData() {
   recordedData.push_back(data);
 
   //GPS
+  if (gpsAvailable) {
   GPSData gd;
   gd.timeStamp  = timeClient.getEpochTime();
   gd.latitude   = GPS.latitude;
@@ -655,8 +662,10 @@ void recordCurrentData() {
   gd.altitude   = GPS.altitude;
   gd.satellites = GPS.satellites;
   recordedGPSData.push_back(gd);
+  }
 
-  Serial.println("Recorded one sensor data entry...");
+  Serial.println("Recorded one sensor data entry" 
+    + String(gpsAvailable ? " + GPS" : ""));
 }
 
 
@@ -690,6 +699,8 @@ void uploadRecordedDataToFirebase() {
 
 //============== upload recordedGPSData to Firebase =============
 void uploadRecordedGPSDataToFirebase() {
+    if (!gpsAvailable || recordedGPSData.empty()) return;
+    
     StaticJsonDocument<4096> doc;
     doc["flag"] = "GPS_recorded_data";
     auto arr = doc.createNestedArray("records");
