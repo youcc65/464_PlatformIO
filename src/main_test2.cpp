@@ -12,6 +12,7 @@
 #include <ArduinoJson.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <Adafruit_GPS.h> 
 #include <vector>
 #include "secrets.h"
 

@@ -34,7 +34,6 @@ int dataPointsCount = 0;
 #define TFT_DC    26
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 
-
 bool pulseAvailable = false; 
 bool bmpAvailable   = false;
 bool bnoAvailable   = false;
