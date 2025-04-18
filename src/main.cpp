@@ -14,9 +14,7 @@
 #include <WiFiUdp.h>
 #include <vector>
 #include "secrets.h"
-// Wi-Fi setup
-const char* ssid = "iPhone";
-const char* password = "88888888";
+#include "wifi-secret.h"
 
 // NTP configuration
 WiFiUDP ntpUDP;
@@ -95,19 +93,16 @@ const unsigned long recordInterval = 10000; // record Every 10 seconds
 
 // Wi‑Fi & NTP
 void connectToWiFi();
-extern NTPClient timeClient;  // 如果你在全局定义了 timeClient
+extern NTPClient timeClient;  
 // Firebase
 void sendDataToFirebase(const String& path, const String& jsonData);
 void uploadSensorDataToFirebase();
 void uploadRecordedDataToFirebase();
-// 按键 & 时钟
 void handleButton();
 void updateClock();
 void drawDigitalClock();
-// 传感器采集
 void updateSensors();
 void recordCurrentData();
-// 显示
 void updateDisplay();
 void displayHeartRate();
 void displayTempPressure();
@@ -116,9 +111,15 @@ void displayMotion();
 void drawHeader(const char* title);
 void displayValue(const char* label, String value, int yPos, uint16_t color);
 void drawRecordingIndicator(bool isOn);
-// 硬件初始化
 void configureBMP388();
 void configureBNO08x();
+
+
+
+
+
+
+
 
 void setup() {
   Serial.begin(115200);
