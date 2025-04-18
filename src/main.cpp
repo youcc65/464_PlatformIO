@@ -13,6 +13,7 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <vector>
+#include "secrets.h"
 // Wi-Fi setup
 const char* ssid = "iPhone";
 const char* password = "88888888";
@@ -21,9 +22,6 @@ const char* password = "88888888";
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 1000);
 
-// Firebase setup
-const char* firebaseHost = "moduwell-9b19f-default-rtdb.firebaseio.com";
-const char* firebaseSecret = "AIzaSyAPqIxMv3Mhj6GBVNnqqnlJxZlm1ThPT8k";
 
 static uint32_t stepCount = 0; 
 
