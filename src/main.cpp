@@ -14,7 +14,6 @@
 #include <WiFiUdp.h>
 #include <vector>
 #include "secrets.h"
-#include "wifi-secret.h"
 
 // NTP configuration
 WiFiUDP ntpUDP;
