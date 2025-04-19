@@ -13,6 +13,7 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <Adafruit_GPS.h> 
+#include <SPIFFS.h> 
 #include <vector>
 #include "secrets.h"
 
@@ -29,6 +30,12 @@ Adafruit_GPS GPS(&Wire);
 #define GPSECHO false
 uint32_t gpsTimer;
 bool gpsAvailable = false;
+
+// Path for cache file
+static const char* CACHE_PATH = "/cache.json";
+
+// SPIFFS and WiFi state tracking
+static bool wasConnected = false; 
 
 //Firebase sending time!!!!!!!
 unsigned long lastFirebaseUpdate = 0;
@@ -133,7 +140,30 @@ void drawRecordingIndicator(bool isOn);
 void configureBMP388();
 void configureBNO08x();
 
+// --- NEW: Append a JSON line to SPIFFS cache
+void cacheData(const String& jsonLine) {
+    File f = SPIFFS.open(CACHE_PATH, FILE_APPEND);
+    if (!f) return;
+    f.println(jsonLine);
+    f.close();
+  }
 
+// --- NEW: On WiFi reconnect or trigger, read cache and upload then clear
+void syncCachedData() {
+    if (!SPIFFS.exists(CACHE_PATH)) return;
+    File f = SPIFFS.open(CACHE_PATH, FILE_READ);
+    while (f.available()) {
+      String line = f.readStringUntil('\n');
+      if (line.length()>5) {
+        // Send cached sensor and GPS data to Firebase
+        sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/recordedData", line);
+        sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/GPSdata", line);
+        delay(50);
+      }
+    }
+    f.close();
+    SPIFFS.remove(CACHE_PATH);
+  }
 
 
 
@@ -143,6 +173,12 @@ void configureBNO08x();
 void setup() {
   Serial.begin(115200);
   
+  // Initialize SPIFFS --- NEW
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS Mount Failed");
+  }
+
+
   // Initialize display
   tft.init(240, 240);
   tft.setRotation(0);
@@ -199,6 +235,9 @@ void setup() {
   // Initialize NTP client
   timeClient.begin();
   timeClient.update();
+
+  
+
 }
 
 
@@ -228,6 +267,16 @@ void loop() {
       gpsAvailable = true;
     }
   }
+
+  // --- NEW: sync offline cache when Wi-Fi reconnects
+  bool nowConnected = (WiFi.status() == WL_CONNECTED);
+  if (nowConnected && !wasConnected) {
+    syncCachedData();
+  }
+  wasConnected = nowConnected;
+
+
+
 
   handleButton();
   updateSensors();
@@ -633,7 +682,6 @@ void configureBNO08x() {
 void recordCurrentData() {
   SensorData data;
   data.timeStamp = timeClient.getEpochTime(); 
-  
   data.heartRate = pulseAvailable ? pulseSensor.getBeatsPerMinute() : 0;
 
   if (bmpAvailable) {
@@ -663,6 +711,31 @@ void recordCurrentData() {
   gd.satellites = GPS.satellites;
   recordedGPSData.push_back(gd);
   }
+
+  StaticJsonDocument<256> tmp;
+  // 基本传感器字段
+  tmp["timeStamp"]   = data.timeStamp;
+  tmp["heart_rate"]  = data.heartRate;
+  tmp["temperature"] = data.temperature;
+  tmp["pressure"]    = data.pressure;
+  tmp["altitude"]    = data.altitude;
+  tmp["step_count"]  = data.steps;
+  // 嵌套 GPS 对象（如果有）
+  if (gpsAvailable) {
+    JsonObject jgps = tmp.createNestedObject("gps");
+    jgps["latitude"]   = gd.latitude;
+    jgps["longitude"]  = gd.longitude;
+    jgps["speed"]      = gd.speed;
+    jgps["angle"]      = gd.angle;
+    jgps["altitude"]   = gd.altitude;
+    jgps["satellites"] = gd.satellites;
+  }
+  // 写入一行 JSON
+  String line;
+  serializeJson(tmp, line);
+  cacheData(line);
+  
+  
 
   Serial.println("Recorded one sensor data entry" 
     + String(gpsAvailable ? " + GPS" : ""));
