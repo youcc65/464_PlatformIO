@@ -113,7 +113,7 @@ struct GPSData {
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
 const unsigned long recordInterval = 20000; // record Every 10 seconds
-、
+
 // Wi‑Fi & NTP
 void connectToWiFi();
 extern NTPClient timeClient;  
