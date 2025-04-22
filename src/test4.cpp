@@ -1,4 +1,5 @@
-//加入了gps和重启功能
+// 测试手表卡
+
 
 #include <Arduino.h> 
 #include <PulseSensorPlayground.h>
@@ -35,7 +36,7 @@ bool gpsAvailable = false;
 
 //Firebase sending time!!!!!!!
 unsigned long lastFirebaseUpdate = 0;
-const unsigned long uploadInterval = 20000;  
+const unsigned long uploadInterval = 60000;  
 const int maxDataPoints = 12;               
 int dataPointsCount = 0;
 
@@ -111,8 +112,8 @@ struct GPSData {
 
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
-const unsigned long recordInterval = 10000; // record Every 10 seconds
-
+const unsigned long recordInterval = 20000; // record Every 10 seconds
+、
 // Wi‑Fi & NTP
 void connectToWiFi();
 extern NTPClient timeClient;  
@@ -226,23 +227,25 @@ void loop() {
   }
 
   // GPS 
-  char c = GPS.read();
-  if (GPS.newNMEAreceived()) {
-    if (GPS.parse(GPS.lastNMEA())) {
-      gpsAvailable = true;
-    }
-  }
+  //char c = GPS.read();
+  //if (GPS.newNMEAreceived()) {
+    //if (GPS.parse(GPS.lastNMEA())) {
+     // gpsAvailable = true;
+    //}
+  //}
 
   handleButton();
   updateSensors();
   updateDisplay();
 
 // Firebase senting time !!!!!!
-  if (millis() - lastFirebaseUpdate >= uploadInterval) {
-    lastFirebaseUpdate = millis();
-    uploadSensorDataToFirebase();
-    dataPointsCount = 0;  
+if (millis() - lastFirebaseUpdate >= uploadInterval) {
+  lastFirebaseUpdate = millis();
+  uploadSensorDataToFirebase();
+  if (gpsAvailable && !recordedGPSData.empty()) {
+    uploadRecordedGPSDataToFirebase();
   }
+}
 
   if (dataPointsCount < maxDataPoints) {
     
@@ -251,10 +254,18 @@ void loop() {
 
   // ============= If recording, get data =============
   if (isRecording) {
-    unsigned long now = millis();
-    if (now - lastRecordTime >= recordInterval) {
-      lastRecordTime = now;
-      recordCurrentData(); 
+    if (millis() - lastRecordTime >= recordInterval) {
+      lastRecordTime = millis();
+      recordCurrentData();  // **必须**调用，才能往 recordedData/recordedGPSData 里 push
+    }
+    static unsigned long lastGPS = 0;
+    if (millis() - lastGPS >= 1000) {
+      lastGPS = millis();
+      char c;
+      while ((c = GPS.read())) {}
+      if (GPS.newNMEAreceived() && GPS.parse(GPS.lastNMEA())) {
+        gpsAvailable = true;
+      }
     }
   }
 

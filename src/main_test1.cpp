@@ -14,6 +14,7 @@
 #include <WiFiUdp.h>
 #include <vector>
 #include "secrets.h"
+#include <esp_system.h>
 
 // NTP configuration
 WiFiUDP ntpUDP;
@@ -70,7 +71,7 @@ bool initialClockDraw = true;
 // ============= For long press detection =============
 static unsigned long buttonPressStartTime = 0;   // record the time after press
 static const unsigned long longPressDuration = 2000; // treat as long press if more than two seconds
-
+static const unsigned long restartPressDuration = 10000; // 10 s 重启
 // ============= If is recording =============
 bool isRecording = false;
 
@@ -308,27 +309,30 @@ void handleButton() {
     unsigned long pressDuration = millis() - buttonPressStartTime;
 
     if (pressDuration < longPressDuration) {
-      // short press
+      // 短按：切换显示模式
       currentMode = static_cast<DisplayMode>((currentMode + 1) % 5);
       tft.fillScreen(ST77XX_BLACK);
       initialClockDraw = true;
-    } else {
-      // long press
+    }
+    else if (pressDuration < 10000) {
+      // 长按 ≥2秒且 <10秒：开始/停止录制
       isRecording = !isRecording;
       if (isRecording) {
-        // clear record before recording
         recordedData.clear();
         Serial.println("=== Start Recording Data ===");
         lastRecordTime = millis();
         stepCountOffset = stepCount;
-        // draw the red circle
         drawRecordingIndicator(true);
       } else {
         Serial.println("=== Stop Recording Data, uploading... ===");
         uploadRecordedDataToFirebase();
-        // hide the red circle
         drawRecordingIndicator(false);
       }
+    }
+    else {
+      // 超长按 ≥10秒：软件重启
+      Serial.println("Long press ≥10s detected, restarting ESP32...");
+      ESP.restart();
     }
   }
 
