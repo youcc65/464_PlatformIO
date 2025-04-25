@@ -1,6 +1,3 @@
-// 测试手表卡
-
-
 #include <Arduino.h> 
 #include <PulseSensorPlayground.h>
 #include <SPI.h>
@@ -36,7 +33,7 @@ bool gpsAvailable = false;
 
 //Firebase sending time!!!!!!!
 unsigned long lastFirebaseUpdate = 0;
-const unsigned long uploadInterval = 60000;  
+const unsigned long uploadInterval = 60000;  //firebase sending time interval
 const int maxDataPoints = 12;               
 int dataPointsCount = 0;
 
@@ -81,7 +78,7 @@ bool initialClockDraw = true;
 // ============= For long press detection =============
 static unsigned long buttonPressStartTime = 0;   // record the time after press
 static const unsigned long longPressDuration = 2000; // treat as long press if more than two seconds
-static const unsigned long restartPressDuration = 8000; // 8 s 重启
+static const unsigned long restartPressDuration = 8000; // 8s ESP32 restart
 
 // ============= If is recording =============
 bool isRecording = false;
@@ -112,7 +109,7 @@ struct GPSData {
 
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
-const unsigned long recordInterval = 10000; // record Every 10 seconds
+const unsigned long recordInterval = 10000; // recorddata Every 10 seconds
 
 // Wi‑Fi & NTP
 void connectToWiFi();
@@ -256,7 +253,7 @@ if (millis() - lastFirebaseUpdate >= uploadInterval) {
   if (isRecording) {
     if (millis() - lastRecordTime >= recordInterval) {
       lastRecordTime = millis();
-      recordCurrentData();  // **必须**调用，才能往 recordedData/recordedGPSData 里 push
+      recordCurrentData();  
     }
     static unsigned long lastGPS = 0;
     if (millis() - lastGPS >= 1000) {
@@ -364,13 +361,13 @@ void handleButton() {
     unsigned long pressDuration = millis() - buttonPressStartTime;
 
     if (pressDuration < longPressDuration) {
-      // 短按：切换显示模式
+      // shortpress: change module
       currentMode = static_cast<DisplayMode>((currentMode + 1) % 5);
       tft.fillScreen(ST77XX_BLACK);
       initialClockDraw = true;
     }
     else if (pressDuration < 10000) {
-      // 长按 ≥2秒 且 <10秒：录制开关
+      // longpress >=2s and <8s: recorddata
       isRecording = !isRecording;
       if (isRecording) {
         recordedData.clear();
@@ -389,8 +386,8 @@ void handleButton() {
       }
     }
     else {
-      // 超长按 ≥10秒：软件重启
-      Serial.println("Long press ≥10s detected, restarting ESP32...");
+      // longpress >=8s: ESP32 restart
+      //Serial.println("Long press ≥10s detected, restarting ESP32...");
       ESP.restart();
     }
   }
@@ -413,7 +410,7 @@ void updateSensors() {
       if (!readOk) {
         // 
         bmpAvailable = false;
-        Serial.println("BMP388 disconnected!");
+        //Serial.println("BMP388 disconnected!");
       }
     } else {
       
@@ -422,16 +419,13 @@ void updateSensors() {
         
         configureBMP388();
         bmpAvailable = true;
-        Serial.println("BMP388 reconnected!");
+        //Serial.println("BMP388 reconnected!");
       } else {
         
         Serial.println("BMP388 still not connected...");
       }
     }
   }  
-  
-  
-
 
   switch (currentMode) {
     case HEART_RATE:
@@ -689,12 +683,11 @@ void recordCurrentData() {
 
 // ============= upload recordedData to Firebase =============
 void uploadRecordedDataToFirebase() {
-  // 这里要注意 JSON 内存大小可能不够，
-  // 如果记录时间过长、数据量大，需要改用动态分配或分批上传
-  // 这里先简单示例
-  StaticJsonDocument<4096> doc; // 如果数据量很大，需要更大或改成动态的
+  // Note that the JSON memory size may not be enough，
+  // If the recording time is too long and the data volume is large, you need to use dynamic allocation or batch upload
+  StaticJsonDocument<4096> doc; 
 
-  // 给一个 flag 标识这是一次性记录的数据
+  // Give a flag to indicate that this is a one-time recorded data
   doc["flag"] = "recorded_data";
 
   JsonArray records = doc.createNestedArray("records");
@@ -737,10 +730,6 @@ void uploadRecordedGPSDataToFirebase() {
     sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/GPSdata", jsonOutput);
     Serial.println("Recorded GPS data uploaded to Firebase!");
   }
-
-
-
-
 
 void drawRecordingIndicator(bool isOn) {
   
