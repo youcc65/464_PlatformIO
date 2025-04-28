@@ -80,7 +80,7 @@ bool initialClockDraw = true;
 // ============= For long press detection =============
 static unsigned long buttonPressStartTime = 0;   // record the time after press
 static const unsigned long longPressDuration = 2000; // treat as long press if more than two seconds
-static const unsigned long restartPressDuration = 10000; // 10 s 重启
+static const unsigned long restartPressDuration = 8000; // 10 s 重启
 
 // ============= If is recording =============
 bool isRecording = false;

@@ -279,7 +279,7 @@ void connectToWiFi() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("\nConnected to Wi-Fi");
+  //Serial.println("\nConnected to Wi-Fi");
 }
 
 //-----------------------------------------------------
@@ -298,16 +298,16 @@ void sendDataToFirebase(const String& path, const String& jsonData) {
 
     if (httpResponseCode > 0) {
       String response = http.getString();
-      Serial.println("Data sent to Firebase!");
-      Serial.println("Response: " + response);
+      //Serial.println("Data sent to Firebase!");
+      //Serial.println("Response: " + response);
     } else {
-      Serial.print("Error sending data. HTTP code: ");
-      Serial.println(httpResponseCode);
+      //Serial.print("Error sending data. HTTP code: ");
+      //Serial.println(httpResponseCode);
     }
 
     http.end();
   } else {
-    Serial.println("Wi-Fi disconnected.");
+    //Serial.println("Wi-Fi disconnected.");
   }
 }
 
@@ -372,12 +372,12 @@ void handleButton() {
       if (isRecording) {
         recordedData.clear();
         recordedGPSData.clear();
-        Serial.println("=== Start Recording Data ===");
+        //Serial.println("=== Start Recording Data ===");
         lastRecordTime = millis();
         stepCountOffset = stepCount;
         drawRecordingIndicator(true);
       } else {
-        Serial.println("=== Stop Recording Data, uploading... ===");
+        //Serial.println("=== Stop Recording Data, uploading... ===");
         uploadRecordedDataToFirebase();
         if (gpsAvailable && !recordedGPSData.empty()) {
           uploadRecordedGPSDataToFirebase();
@@ -422,7 +422,7 @@ void updateSensors() {
         //Serial.println("BMP388 reconnected!");
       } else {
         
-        Serial.println("BMP388 still not connected...");
+        //Serial.println("BMP388 still not connected...");
       }
     }
   }  
