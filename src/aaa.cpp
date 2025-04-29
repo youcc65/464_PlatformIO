@@ -19,7 +19,7 @@
 
 // NTP configuration
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 60000);
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 1000);
 
 
 static uint32_t stepCount = 0; 
@@ -72,7 +72,7 @@ bool initialClockDraw = true;
 // ============= For long press detection =============
 static unsigned long buttonPressStartTime = 0;   // record the time after press
 static const unsigned long longPressDuration = 2000; // treat as long press if more than two seconds
-static const unsigned long restartPressDuration = 10000; // 10 s 重启
+static const unsigned long restartPressDuration = 8000; // 10 s 重启
 // ============= If is recording =============
 bool isRecording = false;
 
@@ -90,7 +90,7 @@ std::vector<SensorData> recordedData;
 
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
-const unsigned long recordInterval = 60000; // record Every 60 seconds
+const unsigned long recordInterval = 10000; // record Every 10 seconds
 
 // Wi‑Fi & NTP
 void connectToWiFi();
@@ -222,13 +222,16 @@ void loop() {
 // Wi-Fi
 //-----------------------------------------------------
 void connectToWiFi() {
-  //Serial.print("Connecting to Wi-Fi");
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConnected to Wi-Fi");
+    Serial.print("Connecting to Wi-Fi");
+    WiFi.begin(ssid, password);
+  
+    unsigned long start = millis();
+    const unsigned long timeout = 10000; // 最多等待 10 秒
+  
+    while (WiFi.status() != WL_CONNECTED && millis() - start < timeout) {
+      delay(500);
+      Serial.print(".");
+    }
 }
 
 //-----------------------------------------------------
@@ -470,6 +473,7 @@ void updateClock() {
     previousMillis = currentMillis;
     if (++seconds >= 60) {
       seconds = 0;
+      minutes++;
       if (++minutes >= 60) {
         minutes = 0;
         hours = (hours + 1) % 24; 
