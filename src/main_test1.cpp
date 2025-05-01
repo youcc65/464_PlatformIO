@@ -636,7 +636,7 @@ void uploadRecordedDataToFirebase() {
   String jsonOutput;
   serializeJson(doc, jsonOutput);
   sendDataToFirebase("users/rlrW9nxLkjcFQCWRJJSNI4DXn5x1/recordedData", jsonOutput);
-  Serial.println("Recorded data uploaded to Firebase!");
+  //Serial.println("Recorded data uploaded to Firebase!");
 }
 
 

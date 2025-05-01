@@ -17,9 +17,21 @@
 #include "secrets.h"
 #include <esp_system.h>
 
+
+// *** MODIFIED ***: FreeRTOS for background upload task
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+
 // NTP configuration
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 1000);
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -4 * 3600, 60000);
+
+unsigned long lastLoopMillis = 0;
+const unsigned long loopInterval = 10;  // 让主循环每 10 ms 运行一次
+
+// FreeRTOS upload task prototype
+void uploadTask(void *param);  // *** MODIFIED ***: task to handle Firebase uploads
 
 
 static uint32_t stepCount = 0; 
@@ -30,6 +42,21 @@ unsigned long lastFirebaseUpdate = 0;
 const unsigned long uploadInterval = 20000;  
 const int maxDataPoints = 12;               
 int dataPointsCount = 0;
+
+
+// FreeRTOS 任务句柄 & 队列
+static TaskHandle_t uploadTaskHandle;
+static TaskHandle_t ntpTaskHandle;
+static TaskHandle_t sensorTaskHandle;
+static TaskHandle_t recordUploadTaskHandle;
+static QueueHandle_t recordQueue;  // 异步录制上传队列
+
+
+// 传感器缓存
+volatile float lastTemperature = 0;
+volatile float lastPressure = 0;
+volatile float lastAltitude = 0;
+volatile uint32_t lastStepCount = 0;
 
 // Display configuration
 #define TFT_CS    25
@@ -72,7 +99,7 @@ bool initialClockDraw = true;
 // ============= For long press detection =============
 static unsigned long buttonPressStartTime = 0;   // record the time after press
 static const unsigned long longPressDuration = 2000; // treat as long press if more than two seconds
-static const unsigned long restartPressDuration = 8000; // 10 s 重启
+static const unsigned long restartPressDuration = 10000; // 10 s 重启
 // ============= If is recording =============
 bool isRecording = false;
 
@@ -87,6 +114,11 @@ struct SensorData {
 };
 // use std::vector to record data
 std::vector<SensorData> recordedData;
+
+// 队列中传递JSON字符串
+const int RECORD_QUEUE_LENGTH = 4;
+const int RECORD_QUEUE_ITEM_SIZE = sizeof(String*);
+
 
 // ============= recordedData time interval =============
 unsigned long lastRecordTime = 0;
@@ -114,7 +146,9 @@ void displayValue(const char* label, String value, int yPos, uint16_t color);
 void drawRecordingIndicator(bool isOn);
 void configureBMP388();
 void configureBNO08x();
-
+void ntpTask(void *param);
+void sensorTask(void *param);
+void recordUploadTask(void *param);
 
 
 
@@ -170,52 +204,62 @@ void setup() {
 
   // Initialize NTP client
   timeClient.begin();
-  timeClient.update();
-}
+  delay(1000);
 
-void loop() {
-  bool ntpSuccess = false;
-
-  if (WiFi.status() == WL_CONNECTED) {
-    ntpSuccess = timeClient.update();  
-  }
-
-  if (ntpSuccess) {
-    // use NTP time
+  if (WiFi.status()==WL_CONNECTED && timeClient.update()) {
     hours   = timeClient.getHours();
     minutes = timeClient.getMinutes();
     seconds = timeClient.getSeconds();
-  } else {
-    
-    updateClock();
   }
 
-  handleButton();
-  updateSensors();
-  updateDisplay();
 
-// Firebase senting time !!!!!!
-  if (millis() - lastFirebaseUpdate >= uploadInterval) {
-    lastFirebaseUpdate = millis();
-    uploadSensorDataToFirebase();
-    dataPointsCount = 0;  
-  }
+  // *** MODIFIED ***: 创建后台任务 & 队列
+  recordQueue = xQueueCreate(RECORD_QUEUE_LENGTH, RECORD_QUEUE_ITEM_SIZE);
+  xTaskCreate(uploadTask, "UploadTask", 4096, NULL, 1, &uploadTaskHandle);
+  xTaskCreate(ntpTask, "NtpTask", 2048, NULL, 1, &ntpTaskHandle);
+  xTaskCreate(sensorTask, "SensorTask", 4096, NULL, 1, &sensorTaskHandle);
+  xTaskCreate(recordUploadTask, "RecUpTask", 8192, NULL, 1, &recordUploadTaskHandle);
 
-  if (dataPointsCount < maxDataPoints) {
-    
-    dataPointsCount++;
-  }
+}
 
-  // ============= If recording, get data =============
-  if (isRecording) {
-    unsigned long now = millis();
-    if (now - lastRecordTime >= recordInterval) {
-      lastRecordTime = now;
-      recordCurrentData(); 
+
+
+void loop() {
+  unsigned long now = millis();
+  if (now - lastLoopMillis >= loopInterval) {  // *** MODIFIED ***: non-blocking loop timing
+    lastLoopMillis = now;
+
+    bool ntpSuccess = false;
+    if (WiFi.status() == WL_CONNECTED) {
+      ntpSuccess = timeClient.update();
+    }
+
+    if (ntpSuccess) {
+      hours   = timeClient.getHours();
+      minutes = timeClient.getMinutes();
+      seconds = timeClient.getSeconds();
+    } else {
+      updateClock();
+    }
+
+    handleButton();
+    updateSensors();
+    updateDisplay();
+
+    // *** MODIFIED ***: removed blocking Firebase upload from loop
+    if (dataPointsCount < maxDataPoints) {
+      dataPointsCount++;
+    }
+
+    if (isRecording) {
+      unsigned long nowRec = millis();
+      if (nowRec - lastRecordTime >= recordInterval) {
+        lastRecordTime = nowRec;
+        recordCurrentData();
+      }
     }
   }
-
-  delay(100);
+  vTaskDelay(1 / portTICK_PERIOD_MS);  // *** MODIFIED ***: yield to FreeRTOS tasks
 }
 
 //-----------------------------------------------------
@@ -224,15 +268,8 @@ void loop() {
 void connectToWiFi() {
     Serial.print("Connecting to Wi-Fi");
     WiFi.begin(ssid, password);
-  
-    unsigned long start = millis();
-    const unsigned long timeout = 10000; // 最多等待 10 秒
-  
-    while (WiFi.status() != WL_CONNECTED && millis() - start < timeout) {
-      delay(500);
-      Serial.print(".");
     }
-}
+
 
 //-----------------------------------------------------
 // Firebase
@@ -473,7 +510,6 @@ void updateClock() {
     previousMillis = currentMillis;
     if (++seconds >= 60) {
       seconds = 0;
-      minutes++;
       if (++minutes >= 60) {
         minutes = 0;
         hours = (hours + 1) % 24; 
@@ -660,4 +696,52 @@ void drawRecordingIndicator(bool isOn) {
   }
 }
 
-  
+// *** MODIFIED ***: FreeRTOS task implementation
+void uploadTask(void *param) {
+  for (;;) {
+    vTaskDelay(uploadInterval / portTICK_PERIOD_MS);
+    uploadSensorDataToFirebase();
+    dataPointsCount = 0;  
+  }
+}
+
+// *** MODIFIED ***: 周期性NTP同步
+void ntpTask(void *param) {
+  for (;;) {
+    vTaskDelay(60000 / portTICK_PERIOD_MS);  // 60s
+    if (WiFi.status() == WL_CONNECTED && timeClient.update()) {
+      hours   = timeClient.getHours();
+      minutes = timeClient.getMinutes();
+      seconds = timeClient.getSeconds();
+    }
+  }
+}
+
+
+// *** MODIFIED ***: 周期性传感器读取并缓存
+void sensorTask(void *param) {
+  for (;;) {
+    if (bmp.performReading()) {
+      lastTemperature = bmp.temperature;
+      lastPressure    = bmp.pressure / 100.0;
+      lastAltitude    = bmp.readAltitude(SEALEVELPRESSURE_HPA);
+    }
+    if (bno08x.getSensorEvent(&sensorValue) && sensorValue.sensorId == SH2_STEP_COUNTER) {
+      lastStepCount = sensorValue.un.stepCounter.steps;
+    }
+    vTaskDelay(500 / portTICK_PERIOD_MS);  // 2Hz 更新
+  }
+}
+
+// *** MODIFIED ***: 异步上传录制数据
+void recordUploadTask(void *param) {
+  String *p;
+  for (;;) {
+    if (xQueueReceive(recordQueue, &p, portMAX_DELAY) == pdPASS) {
+      sendDataToFirebase("users/.../recordedData", *p);
+      delete p;
+    }
+  }
+}
+
+
